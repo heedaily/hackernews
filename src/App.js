@@ -1,305 +1,180 @@
 import React, { Component } from 'react';
+import axios from 'axios';
 import './App.css';
 
-const list = [
-  {
-    title: 'React',
-    url: 'https://facebook.github.io/react/',
-    author: 'Jordan Walke',
-    num_comments: 3,
-    points: 4,
-    objectID: 0,
-  },
-  {
-    title: 'Redux',
-    url: 'https://github.com/reactjs/redux',
-    author: 'Dan Abramov, Andrew Clark',
-    num_comments: 2,
-    points: 5,
-    objectID: 1,
-  },
-];
+const DEFAULT_QUERY = 'redux';
+const DEFAULT_HPP = '100';
 
-const name = 'Robin';
-const key = 'name';
-const user = {
-  [key]: name,
-};
+const PATH_BASE = 'https://hn.algolia.com/api/v1';
+const PATH_SEARCH = '/search';
+const PARAM_SEARCH = 'query=';
+const PARAM_PAGE = 'page=';
+const PARAM_HPP = 'hitsPerPage=';
 
-const userService = {
-  getUserName(user) {
-    return user[key];
-  },
-};
-
-const isSearched = (searchTerm) => (item) =>
-  item.title.toLowerCase().includes(searchTerm.toLowerCase());
-  
-const userDestructuring = {
-  firstname: 'Robin',
-  lastname: 'Wieruch',
-};
-const {
-  firstname,
-  lastname
-} = userDestructuring;
-
-console.log(firstname + ' ' + lastname);
-
-const usersDestructuring = ['Robin', 'Andrew', 'Dan'];
-const [
-  userOne,
-  userTwo,
-  userThree
-] = usersDestructuring;
-
-console.log(userOne, userTwo, userThree);
- 
- // 非状態関数形コンポネント
- // stateが無いので、this.stateまたは、this.setState()でstateへアクセスやアップデートできません。
- // constructor()が有り、render()が使用できます。
- // render()はコンポネントがアップデートされる度に実行されます。
 class App extends Component {
+  _isMounted = false;
+
   constructor(props) {
-    console.log(`constructor props: ${JSON.stringify(props)}`);
     super(props);
-    
+
     this.state = {
-      list,
-      searchTerm: '',
+      results: null,
+      searchKey: '',
+      searchTerm: DEFAULT_QUERY,
+      error: null,
     };
-    
-    // インスタンスで自動にthisをバインドしないため、バインドする。
-    this.onDismiss = this.onDismiss.bind(this);
+
+    this.needsToSearchTopStories = this.needsToSearchTopStories.bind(this);
+    this.setSearchTopStories = this.setSearchTopStories.bind(this);
+    this.fetchSearchTopStories = this.fetchSearchTopStories.bind(this);
     this.onSearchChange = this.onSearchChange.bind(this);
+    this.onSearchSubmit = this.onSearchSubmit.bind(this);
+    this.onDismiss = this.onDismiss.bind(this);
   }
-  
-  onDismiss(id) {
-    const updatedList = this.state.list.filter(item => item.objectID !== id);
-    this.setState({ list: updatedList });
+
+  needsToSearchTopStories(searchTerm) {
+    return !this.state.results[searchTerm];
   }
-  
+
+  setSearchTopStories(result) {
+    const { hits, page } = result;
+    const { searchKey, results } = this.state;
+
+    const oldHits = results && results[searchKey]
+      ? results[searchKey].hits
+      : [];
+
+    const updatedHits = [
+      ...oldHits,
+      ...hits
+    ];
+
+    this.setState({
+      results: {
+        ...results,
+        [searchKey]: { hits: updatedHits, page }
+      }
+    });
+  }
+
+  fetchSearchTopStories(searchTerm, page = 0) {
+    axios(`${PATH_BASE}${PATH_SEARCH}?${PARAM_SEARCH}${searchTerm}&${PARAM_PAGE}${page}&${PARAM_HPP}${DEFAULT_HPP}`)
+      .then(result => this._isMounted && this.setSearchTopStories(result.data))
+      .catch(error => this._isMounted && this.setState({ error }));
+  }
+
+  componentDidMount() {
+    this._isMounted = true;
+    
+    const { searchTerm } = this.state;
+    this.setState({ searchKey: searchTerm });
+    this.fetchSearchTopStories(searchTerm);
+  }
+
+  componentWillUnmount() {
+    this._isMounted = false;
+  }
+
   onSearchChange(event) {
-    console.log(`onSearchChange event.target.value: ${event.target.value}`);
     this.setState({ searchTerm: event.target.value });
   }
-  onClickMe= () => console.log(this);
- 
+
+  onSearchSubmit(event) {
+    const { searchTerm } = this.state;
+    this.setState({ searchKey: searchTerm });
+
+    if (this.needsToSearchTopStories(searchTerm)) {
+      this.fetchSearchTopStories(searchTerm);
+    }
+
+    event.preventDefault();
+  }
+
+  onDismiss(id) {
+    const { searchKey, results } = this.state;
+    const { hits, page } = results[searchKey];
+
+    const isNotId = item => item.objectID !== id;
+    const updatedHits = hits.filter(isNotId);
+
+    this.setState({
+      results: {
+        ...results,
+        [searchKey]: { hits: updatedHits, page }
+      }
+    });
+  }
+
   render() {
-    const { searchTerm, list } = this.state;
+    const {
+      searchTerm,
+      results,
+      searchKey,
+      error,
+    } = this.state;
+
+    const page = (
+      results &&
+      results[searchKey] &&
+      results[searchKey].page
+    ) || 0;
+
+    const list = (
+      results &&
+      results[searchKey] &&
+      results[searchKey].hits
+    ) || [];
+
     return (
       <div className="page">
         <div className="interactions">
-          <div>
-            <h2>リアクト</h2>
-          </div>
-          <div>
-            <h2>{userService.getUserName(user)}</h2>
-          </div>
-          <div>------------------------------ClickEvent--------------------------------------</div>
-          {this.state.list.map(item => {
-            const onHandleDismiss = () => this.onDismiss(item.objectID);
-            return (
-              <div key={item.objectID} className="App-item">
-                <span>
-                  <a href={item.url}>{item.title}</a>
-                </span>&nbsp;
-                <span>{item.author}</span>&nbsp;
-                <span>{item.num_comments}</span>&nbsp;
-                <span>{item.points}</span>&nbsp;
-                <span>
-                  <button
-                    onClick={onHandleDismiss}
-                    type="button"
-                  >
-                    dismiss
-                  </button>&nbsp;
-                  <button
-                    onClick={this.onClickMe}
-                      type="button"
-                  >
-                    Click Me
-                  </button>&nbsp;
-                  <button
-                  onClick = {() => console.log(item.objectID)}
-                  type="button"
-                  >
-                  Dismiss
-                  </button>
-                </span>
-              </div>
-            );
-          }
-          )}
-          <div>------------------------------Filter--------------------------------------</div>
-          <form>
-            TitleSearch : <input 
-              type="text" 
-              value={searchTerm} 
-              onChange={this.onSearchChange} 
-              />
-          </form>
-          {list.filter(isSearched(searchTerm)).map(item => {
-          // {this.state.list.filter(isSearched(this.state.searchTerm)).map(item => {
-            const onHandleDismiss = () => this.onDismiss(item.objectID);
-            return (
-              <div key={item.objectID} className="App-item">
-                <span>
-                  <a href={item.url}>{item.title}</a>
-                </span>&nbsp;
-                <span>{item.author}</span>&nbsp;
-                <span>{item.num_comments}</span>&nbsp;
-                <span>{item.points}</span>&nbsp;
-                <span>
-                  <button
-                    onClick={onHandleDismiss}
-                    type="button"
-                  >
-                    dismiss
-                  </button>&nbsp;
-                  <button
-                    onClick={this.onClickMe}
-                      type="button"
-                  >
-                    Click Me
-                  </button>&nbsp;
-                  <button
-                  onClick = {() => console.log(item.objectID)}
-                  type="button"
-                  >
-                  Dismiss
-                  </button>
-                </span>
-              </div>
-            );
-          }
-          )}
-          <div>------------------------------Component--------------------------------------</div>
           <Search
             value={searchTerm}
             onChange={this.onSearchChange}
+            onSubmit={this.onSearchSubmit}
           >
             Search
           </Search>
-          <Table
-            list={list}
-            pattern={searchTerm}
-            onDismiss={this.onDismiss}
-          />
-          <div>------------------------------FunctionalStatelessComponents--------------------------------------</div>
-          <SearchFunctionalStatelessComponents
-            value={searchTerm}
-            onChange={this.onSearchChange}
-          >
-            Search
-          </SearchFunctionalStatelessComponents>
-          <TableFunctionalStatelessComponents
-            list={list}
-            pattern={searchTerm}
-            onDismiss={this.onDismiss}
-          />
+        </div>
+        { error
+          ? <div className="interactions">
+            <p>Something went wrong.</p>
           </div>
+          : <Table
+            list={list}
+            onDismiss={this.onDismiss}
+          />
+        }
+        <div className="interactions">
+          <Button onClick={() => this.fetchSearchTopStories(searchKey, page + 1)}>
+            More
+          </Button>
+        </div>
       </div>
     );
   }
 }
 
-class Search extends Component {
-  render() {
-    // propsはthisを使用して、クラスのインスタンスへアクセスする。
-    // Appコンポネントのすべてが渡される。
-    // childrenはオブジェクトの中にアクセスできるプロパティ。
-    const { value, onChange, children } = this.props;
-    return (
-      <form>
-        {children} : <input
-          type="text"
-          value={value}
-          onChange={onChange}
-        />
-      </form>
-    );
-  }
-}
+const Search = ({
+  value,
+  onChange,
+  onSubmit,
+  children
+}) =>
+  <form onSubmit={onSubmit}>
+    <input
+      type="text"
+      value={value}
+      onChange={onChange}
+    />
+    <button type="submit">
+      {children}
+    </button>
+  </form>
 
-class Table extends Component {
-  render() {
-    const { list, pattern, onDismiss } = this.props;
-    return (
-      <div>
-        {list.filter(isSearched(pattern)).map(item =>
-          <div key={item.objectID}>
-            <span>
-              <a href={item.url}>{item.title}</a>
-            </span>&nbsp;
-            <span>{item.author}</span>&nbsp;
-            <span>{item.num_comments}</span>&nbsp;
-            <span>{item.points}</span>&nbsp;
-            <span>
-              <Button onClick={() => onDismiss(item.objectID)}>
-                Dismiss
-              </Button>&nbsp;
-            </span>&nbsp;
-          </div>
-        )}
-      </div>
-    );
-  }
-}
-
-// 再利用できるコンポネント(Reusable Components)
-// リアクトではすべてのコンポネントが再利用できるコンポネントで在る。
-class Button extends Component {
-  render() {
-    const {
-      onClick,
-      className = '',
-      children,
-    } = this.props;
-
-    return (
-      <button
-        onClick={onClick}
-        className={className}
-        type="button"
-      >
-        {children}
-      </button>
-    );
-  }
-}
-
-// 非状態関数形コンポネントへ変更
-const SearchFunctionalStatelessComponents = ({ value, onChange, children }) => {
-// 2. function Search({ value, onChange, children }) {
-  // 1. function Search(props) {
-  // 1. const { value, onChange, children } = props;
-  return (
-    <form>
-      {children} : <input
-        type="text"
-        value={value}
-        onChange={onChange}
-      />
-    </form>
-  );
-}
-
-const largeColumn = {
-  width: '40%',
-};
-
-const midColumn = {
-  width: '30%',
-};
-
-const smallColumn = {
-  width: '10%',
-};
-
-const TableFunctionalStatelessComponents = ({ list, pattern, onDismiss }) =>
+const Table = ({ list, onDismiss }) =>
   <div className="table">
-    {list.filter(isSearched(pattern)).map(item =>
+    {list.map(item =>
       <div key={item.objectID} className="table-row">
         <span style={{ width: '40%' }}>
           <a href={item.url}>{item.title}</a>
@@ -324,5 +199,18 @@ const TableFunctionalStatelessComponents = ({ list, pattern, onDismiss }) =>
       </div>
     )}
   </div>
-export default App;
 
+const Button = ({
+  onClick,
+  className = '',
+  children,
+}) =>
+  <button
+    onClick={onClick}
+    className={className}
+    type="button"
+  >
+    {children}
+  </button>
+
+export default App;
